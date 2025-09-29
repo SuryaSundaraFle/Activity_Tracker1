@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Activity Tracker Web App</title>
+  <style>
+    /* Styles for Leave/WFH cells */
+    .status-leave {
+      background-color: #f44336; /* Red */
+      color: white;
+      font-weight: bold;
+      text-align: center;
+    }
+    .status-wfh {
+      background-color: #ffeb3b; /* Yellow */
+      font-weight: bold;
+      text-align: center;
+    }
+    /* Basic table styling */
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-bottom: 20px;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 8px;
+      text-align: center;
+      height: 40px;
+    }
+    th {
+      background-color: #eee;
+    }
+    /* Column widths */
+    .employee-col, .employee-name {
+      width: 150px;
+    }
+    .actions-col, .actions {
+      width: 120px;
+    }
+    .project-col {
+      width: 200px;
+    }
+    .capacity-col {
+      width: 80px;
+    }
+    .remarks-col {
+      width: 150px;
+    }
+    /* Scrollable wrapper */
+    #activityWrapper {
+      max-height: 600px;
+      max-width: 100%;
+      overflow: auto;
+      position: relative;
+    }
+    /* Sticky styles for headers and columns */
+    #dateHeaderRow th {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background-color: #eee;
+    }
+    #subHeaderRow th {
+      position: sticky;
+      top: 40px;
+      z-index: 10;
+      background-color: #eee;
+    }
+    th.employee-col, td.employee-name {
+      position: sticky;
+      left: 0;
+      z-index: 15;
+      background-color: #eee;
+    }
+    th.actions-col, td.actions {
+      position: sticky;
+      left: 150px;
+      z-index: 15;
+      background-color: #fff;
+    }
+    /* Ensure sticky cells don’t collapse */
+    th.employee-col, td.employee-name, th.actions-col, td.actions {
+      min-width: 150px; /* Match .employee-col width */
+    }
+    th.actions-col, td.actions {
+      min-width: 120px; /* Match .actions-col width */
+    }
+    /* Sum cell error */
+    .sum-error {
+      background-color: #f44336 !important;
+      color: white;
+    }
+    /* Scroll container for Leave Tracker */
+    #leaveTrackerTable {
+      min-width: 600px;
+    }
+    /* Photo holder styles */
+    .employee-photo {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      object-fit: cover;
+      vertical-align: middle;
+      margin-right: 5px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>Activity Tracker</h1>
+  
+  <div style="margin-bottom: 10px;">
+    <input type="text" id="newEmployeeName" class="add-employee-input" placeholder="Add employee name" />
+    <button id="addEmployeeBtn" class="add-employee-btn">Add Employee</button>
+  </div>
+
+  <div id="activityWrapper">
+    <table id="activityTable">
+      <thead>
+        <tr id="dateHeaderRow"></tr>
+        <tr id="subHeaderRow"></tr>
+      </thead>
+      <tbody id="activityBody"></tbody>
+    </table>
+  </div>
+
+  <h1>Leave Tracker</h1>
+  <div style="overflow: auto; max-width: 100%;">
+    <table id="leaveTrackerTable">
+      <thead>
+        <tr id="leaveTrackerHeader">
+          <th>Date</th>
+          <!-- Employee names headers will be added dynamically -->
+        </tr>
+      </thead>
+      <tbody id="leaveTrackerBody">
+        <!-- Date rows with employee leave status will be dynamically created -->
+      </tbody>
+      <tfoot>
+        <tr id="leaveCountRow">
+          <th>Leave Count</th>
+          <!-- Leave count cells per employee -->
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <h2>Leave Planning</h2>
+  <form id="leavePlanningForm" style="margin-bottom: 30px;">
+    <label>
+      Date From:
+      <input type="date" id="dateFrom" required />
+    </label>
+    <label style="margin-left: 15px;">
+      Date To:
+      <input type="date" id="dateTo" required />
+    </label>
+    <label style="margin-left: 15px;">
+      Employee:
+      <select id="employeeSelect" required>
+        <!-- Options dynamically added -->
+      </select>
+    </label>
+    <label style="margin-left: 15px;">
+      Status:
+      <select id="statusSelect" required>
+        <option value="LEAVE">Leave</option>
+        <option value="WFH">WFH</option>
+      </select>
+    </label>
+    <button type="submit" style="margin-left: 15px;">Mark</button>
+  </form>
+
+  <h2>Bulk Status Removal</h2>
+  <form id="bulkRemoveForm" style="margin-bottom: 30px;">
+    <label>
+      Date From:
+      <input type="date" id="bulkRemoveDateFrom" required />
+    </label>
+    <label style="margin-left: 15px;">
+      Date To:
+      <input type="date" id="bulkRemoveDateTo" required />
+    </label>
+    <label style="margin-left: 15px;">
+      Employee:
+      <select id="bulkRemoveEmployeeSelect" required>
+        <!-- Options dynamically added -->
+      </select>
+    </label>
+    <button type="submit" style="margin-left: 15px;">Remove Status</button>
+  </form>
+
+  <input type="color" id="colorPicker" style="position: absolute; display: none;">
+  <input type="file" id="photoInput" accept="image/*" style="display: none;">
+
+<script>
+  var gk_isXlsx = false;
+  var gk_xlsxFileLookup = {};
+  var gk_fileData = {};
+  function filledCell(cell) {
+    return cell !== '' && cell != null;
+  }
+  function loadFileData(filename) {
+    if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+      try {
+        var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+        var firstSheetName = workbook.SheetNames[0];
+        var worksheet = workbook.Sheets[firstSheetName];
+
+        // Convert sheet to JSON to filter blank rows
+        var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+        // Filter out blank rows (rows where all cells are empty, null, or undefined)
+        var filteredData = jsonData.filter(row => row.some(filledCell));
+
+        // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+        var headerRowIndex = filteredData.findIndex((row, index) =>
+          row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+        );
+        // Fallback
+        if (headerRowIndex === -1 || headerRowIndex > 25) {
+          headerRowIndex = 0;
+        }
+
+        // Convert filtered JSON back to CSV
+        var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex));
+        csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+        return csv;
+      } catch (e) {
+        console.error(e);
+        return "";
+      }
+    }
+    return gk_fileData[filename] || "";
+  }
+
+  const startDate = new Date(2025, 8, 26); // Fixed start date: September 26, 2025
+  startDate.setHours(0, 0, 0, 0); // Normalize to midnight
+  const endDate = new Date(2025, 11, 31); // Dec 31, 2025
+  const PASSWORD = "admin123"; // Hardcoded password for removing statuses
+
+  let employees = ['Akash', 'Baskaran', 'Surya', 'Yash'];
+  const leaveTrackerData = {};
+  const employeePhotos = {}; // Store base64 photo data
+
+  function saveData() {
+    const data = { employees, leaveTrackerData, employeePhotos };
+    localStorage.setItem('activityTrackerData', JSON.stringify(data));
+  }
+
+  function loadData() {
+    const saved = localStorage.getItem('activityTrackerData');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed.employees)) employees = parsed.employees;
+        if (typeof parsed.leaveTrackerData === 'object') {
+          Object.assign(leaveTrackerData, parsed.leaveTrackerData);
+        }
+        if (typeof parsed.employeePhotos === 'object') {
+          Object.assign(employeePhotos, parsed.employeePhotos);
+        }
+      } catch (err) {
+        console.error('Error loading saved data:', err);
+      }
+    }
+  }
+
+  function generateDatesArray(start, end) {
+    let dates = [];
+    let d = new Date(start);
+    while (d <= end) {
+      dates.push(new Date(d));
+      d.setDate(d.getDate() + 1);
+    }
+    return dates;
+  }
+  
+  const dates = generateDatesArray(startDate, endDate);
+
+  function formatDate(date) {
+    const dd = String(date.getDate()).padStart(2,'0');
+    const mm = String(date.getMonth() + 1).padStart(2,'0');
+    const yyyy = date.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
+  function isWeekend(date) {
+    const day = date.getDay();
+    return day === 0 || day === 6; // 0 is Sunday, 6 is Saturday
+  }
+
+  function buildHeaders() {
+    const dateHeaderRow = document.getElementById('dateHeaderRow');
+    const subHeaderRow = document.getElementById('subHeaderRow');
+    dateHeaderRow.innerHTML = '';
+    subHeaderRow.innerHTML = '';
+
+    const emptyTh1 = document.createElement('th');
+    emptyTh1.rowSpan = 2;
+    emptyTh1.textContent = 'Employee';
+    emptyTh1.classList.add('employee-col');
+    dateHeaderRow.appendChild(emptyTh1);
+
+    const emptyTh2 = document.createElement('th');
+    emptyTh2.rowSpan = 2;
+    emptyTh2.textContent = 'Actions';
+    emptyTh2.classList.add('actions-col');
+    dateHeaderRow.appendChild(emptyTh2);
+
+    for (const date of dates) {
+      const thDate = document.createElement('th');
+      thDate.colSpan = 3;
+      thDate.textContent = formatDate(date);
+      dateHeaderRow.appendChild(thDate);
+
+      ['Project Name', 'Capacity', 'Remarks'].forEach(text => {
+        const thSub = document.createElement('th');
+        thSub.textContent = text;
+        thSub.classList.add(text === 'Project Name' ? 'project-col' : text === 'Capacity' ? 'capacity-col' : 'remarks-col');
+        subHeaderRow.appendChild(thSub);
+      });
+    }
+  }
+
+  function createEmployeeRow(employeeName, rowIndex, isAutomationRow = false) {
+    const tr = document.createElement('tr');
+    tr.classList.add(isAutomationRow ? 'automation-row' : 'project-row');
+
+    if (rowIndex === 0) {
+      const tdName = document.createElement('td');
+      tdName.rowSpan = 8;
+      tdName.classList.add('employee-name');
+
+      // Create photo holder
+      const img = document.createElement('img');
+      img.classList.add('employee-photo');
+      img.src = employeePhotos[employeeName] || 'https://via.placeholder.com/30'; // Default placeholder
+      img.alt = `${employeeName}'s photo`;
+      img.title = `Click to upload photo for ${employeeName}`;
+      img.addEventListener('click', () => handlePhotoUpload(employeeName));
+      tdName.appendChild(img);
+
+      // Append employee name
+      const nameText = document.createTextNode(employeeName);
+      tdName.appendChild(nameText);
+
+      tr.appendChild(tdName);
+
+      const tdActions = document.createElement('td');
+      tdActions.rowSpan = 8;
+      tdActions.classList.add('actions');
+
+      const leaveBtn = document.createElement('button');
+      leaveBtn.textContent = 'Leave';
+      leaveBtn.className = 'leave-btn';
+      leaveBtn.addEventListener('click', () => handleLeaveWFH(employeeName, 'LEAVE'));
+
+      const wfhBtn = document.createElement('button');
+      wfhBtn.textContent = 'WFH';
+      wfhBtn.className = 'wfh-btn';
+      wfhBtn.addEventListener('click', () => handleLeaveWFH(employeeName, 'WFH'));
+
+      const removeBtn = document.createElement('button');
+      removeBtn.textContent = 'Remove Status';
+      removeBtn.className = 'remove-btn';
+      removeBtn.addEventListener('click', () => removeStatus(employeeName));
+
+      tdActions.appendChild(leaveBtn);
+      tdActions.appendChild(wfhBtn);
+      tdActions.appendChild(removeBtn);
+      tr.appendChild(tdActions);
+    }
+
+    for (const date of dates) {
+      for (let i = 0; i < 3; i++) {
+        const td = document.createElement('td');
+        const subColumn = i === 0 ? 'Project' : i === 1 ? 'Capacity' : 'Remarks';
+        td.dataset.employee = employeeName;
+        td.dataset.isAutomation = isAutomationRow ? 'true' : 'false';
+        td.dataset.subColumn = subColumn;
+
+        if (subColumn === 'Capacity') {
+          if (isAutomationRow) {
+            td.contentEditable = false;
+            td.classList.add('sum-capacity');
+          } else {
+            td.classList.add('capacity-input');
+            td.contentEditable = true;
+          }
+        } else {
+          td.contentEditable = (!isAutomationRow || i !== 2);
+        }
+
+        tr.appendChild(td);
+      }
+    }
+
+    return tr;
+  }
+
+  function handlePhotoUpload(employeeName) {
+    const photoInput = document.getElementById('photoInput');
+    photoInput.value = ''; // Reset input
+    photoInput.click();
+    photoInput.onchange = (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        if (!file.type.startsWith('image/')) {
+          alert('Please select an image file.');
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          employeePhotos[employeeName] = event.target.result;
+          saveData();
+          buildActivityBody(); // Rebuild to update photo
+        };
+        reader.readAsDataURL(file);
+      }
+    };
+  }
+
+  function buildActivityBody() {
+    const tbody = document.getElementById('activityBody');
+    tbody.innerHTML = '';
+
+    employees.forEach(employeeName => {
+      for (let i = 0; i < 8; i++) {
+        const isAutomation = (i === 7);
+        const tr = createEmployeeRow(employeeName, i, isAutomation);
+        tbody.appendChild(tr);
+      }
+    });
+
+    addCapacityListeners();
+    addColorPickerListeners();
+
+    for (const dateStr in leaveTrackerData) {
+      const dateIndex = dates.findIndex(d => formatDate(d) === dateStr);
+      if (dateIndex === -1) continue;
+
+      employees.forEach(employeeName => {
+        if (leaveTrackerData[dateStr][employeeName]) {
+          const status = leaveTrackerData[dateStr][employeeName];
+          const dateObj = dates[dateIndex];
+          if (!isWeekend(dateObj)) {
+            markStatusAtDate(employeeName, status, dateObj);
+          }
+        }
+      });
+    }
+  }
+
+  function addCapacityListeners() {
+    document.querySelectorAll('.capacity-input').forEach(td => {
+      td.addEventListener('blur', (e) => {
+        const val = td.textContent.trim();
+        const num = parseFloat(val);
+        if (isNaN(num) || num < 0 || num > 100) {
+          alert('Capacity must be a number between 0 and 100.');
+          td.textContent = '';
+        }
+        const employee = td.dataset.employee;
+        const tr = td.parentElement;
+        const cellIndex = Array.from(tr.children).indexOf(td);
+        const col = cellIndex - (tr.querySelector('.employee-name') ? 2 : 0);
+        const dateIndex = Math.floor(col / 3);
+        computeCapacitySum(employee, dateIndex);
+      });
+    });
+  }
+
+  function computeCapacitySum(employee, dateIndex) {
+    const rows = Array.from(document.getElementById('activityBody').querySelectorAll('tr'));
+    let startRowIndex = -1;
+    for (let i = 0; i < rows.length; i += 8) {
+      const firstRow = rows[i];
+      const nameCell = firstRow.querySelector('td.employee-name');
+      if (nameCell && nameCell.textContent.includes(employee)) {
+        startRowIndex = i;
+        break;
+      }
+    }
+    if (startRowIndex === -1) return;
+
+    let sum = 0;
+    for (let k = 0; k < 7; k++) {
+      const r = rows[startRowIndex + k];
+      const offset = r.querySelector('.employee-name') ? 2 : 0;
+      const capacityCell = r.children[offset + dateIndex * 3 + 1];
+      sum += parseFloat(capacityCell.textContent) || 0;
+    }
+
+    const autoRow = rows[startRowIndex + 7];
+    const offsetAuto = autoRow.querySelector('.employee-name') ? 2 : 0;
+    const sumCell = autoRow.children[offsetAuto + dateIndex * 3 + 1];
+    sumCell.textContent = sum;
+    if (sum !== 100) {
+      sumCell.classList.add('sum-error');
+    } else {
+      sumCell.classList.remove('sum-error');
+    }
+  }
+
+  function addColorPickerListeners() {
+    const colorPicker = document.getElementById('colorPicker');
+    document.querySelectorAll('#activityTable td').forEach(td => {
+      td.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        colorPicker.style.left = `${e.pageX}px`;
+        colorPicker.style.top = `${e.pageY}px`;
+        colorPicker.style.display = 'block';
+        colorPicker.focus();
+        colorPicker.onchange = () => {
+          td.style.backgroundColor = colorPicker.value;
+          colorPicker.style.display = 'none';
+        };
+        colorPicker.onblur = () => {
+          colorPicker.style.display = 'none';
+        };
+      });
+    });
+  }
+
+  function getTodayDateIndex() {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Normalize to midnight
+    const todayStr = formatDate(today);
+    return dates.findIndex(d => formatDate(d) === todayStr);
+  }
+
+  function clearStatusCells(employeeName, dateIndex, firstRow) {
+    const baseIndex = 2 + dateIndex * 3; // Start of the date's columns
+    const projectCell = firstRow.children[baseIndex]; // Project Name
+    const remarksCell = firstRow.children[baseIndex + 2]; // Remarks
+
+    if (projectCell) {
+      projectCell.textContent = '';
+      projectCell.classList.remove('status-leave', 'status-wfh');
+    }
+    if (remarksCell) {
+      remarksCell.textContent = '';
+      remarksCell.classList.remove('status-leave', 'status-wfh');
+    }
+  }
+
+  function markStatus(employeeName, status) {
+    const today = new Date();
+    if (isWeekend(today)) {
+      alert('Cannot mark LEAVE or WFH on weekends.');
+      return;
+    }
+
+    const dateIndex = getTodayDateIndex();
+    if (dateIndex === -1) {
+      alert('Today’s date column not found.');
+      return;
+    }
+
+    const tbody = document.getElementById('activityBody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    let startRowIndex = -1;
+    for (let i = 0; i < rows.length; i += 8) {
+      const firstRow = rows[i];
+      const nameCell = firstRow.querySelector('.employee-name');
+      if (nameCell && nameCell.textContent.includes(employeeName)) {
+        startRowIndex = i;
+        break;
+      }
+    }
+    if (startRowIndex === -1) {
+      alert(`Employee ${employeeName} rows not found.`);
+      return;
+    }
+
+    const firstRow = rows[startRowIndex];
+    if (!firstRow) {
+      alert('First row not found.');
+      return;
+    }
+
+    // Clear existing statuses for the date
+    clearStatusCells(employeeName, dateIndex, firstRow);
+
+    const baseIndex = 2 + dateIndex * 3; // Start of the date's columns
+    const cellIndex = status === 'LEAVE' ? baseIndex : baseIndex + 2; // Project Name for LEAVE, Remarks for WFH
+    const targetCell = firstRow.children[cellIndex];
+    if (!targetCell) {
+      alert('Target cell not found.');
+      return;
+    }
+
+    targetCell.textContent = status;
+    targetCell.classList.add(status === 'LEAVE' ? 'status-leave' : 'status-wfh');
+
+    const todayStr = formatDate(today);
+    if (!leaveTrackerData[todayStr]) {
+      leaveTrackerData[todayStr] = {};
+    }
+    leaveTrackerData[todayStr][employeeName] = status;
+
+    updateLeaveTrackerTable();
+    saveData();
+  }
+
+  function markStatusAtDate(employeeName, status, dateObj) {
+    if (isWeekend(dateObj)) {
+      return; // Skip weekends
+    }
+
+    const dateIndex = dates.findIndex(d => formatDate(d) === formatDate(dateObj));
+    if (dateIndex === -1) return;
+
+    const tbody = document.getElementById('activityBody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    let startRowIndex = -1;
+    for (let i = 0; i < rows.length; i += 8) {
+      const firstRow = rows[i];
+      const nameCell = firstRow.querySelector('.employee-name');
+      if (nameCell && nameCell.textContent.includes(employeeName)) {
+        startRowIndex = i;
+        break;
+      }
+    }
+    if (startRowIndex === -1) return;
+
+    const firstRow = rows[startRowIndex];
+    if (!firstRow) return;
+
+    // Clear existing statuses for the date
+    clearStatusCells(employeeName, dateIndex, firstRow);
+
+    const baseIndex = 2 + dateIndex * 3;
+    const cellIndex = status === 'LEAVE' ? baseIndex : baseIndex + 2; // Project Name for LEAVE, Remarks for WFH
+    const targetCell = firstRow.children[cellIndex];
+    if (!targetCell) return;
+
+    targetCell.textContent = status;
+    targetCell.classList.add(status === 'LEAVE' ? 'status-leave' : 'status-wfh');
+
+    const dateStr = formatDate(dateObj);
+    if (!leaveTrackerData[dateStr]) {
+      leaveTrackerData[dateStr] = {};
+    }
+    leaveTrackerData[dateStr][employeeName] = status;
+
+    saveData();
+  }
+
+  function removeStatus(employeeName, dateStr = null) {
+    const password = prompt('Enter password to remove status:');
+    if (password !== PASSWORD) {
+      alert('Incorrect password.');
+      return;
+    }
+
+    const targetDate = dateStr ? new Date(dates.find(d => formatDate(d) === dateStr)) : new Date();
+    if (isWeekend(targetDate)) {
+      alert('Cannot remove status on weekends.');
+      return;
+    }
+
+    const dateIndex = dateStr ? dates.findIndex(d => formatDate(d) === dateStr) : getTodayDateIndex();
+    if (dateIndex === -1) {
+      alert('Specified date column not found.');
+      return;
+    }
+
+    const tbody = document.getElementById('activityBody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    let startRowIndex = -1;
+    for (let i = 0; i < rows.length; i += 8) {
+      const firstRow = rows[i];
+      const nameCell = firstRow.querySelector('.employee-name');
+      if (nameCell && nameCell.textContent.includes(employeeName)) {
+        startRowIndex = i;
+        break;
+      }
+    }
+    if (startRowIndex === -1) {
+      alert(`Employee ${employeeName} rows not found.`);
+      return;
+    }
+
+    const firstRow = rows[startRowIndex];
+    if (!firstRow) {
+      alert('First row not found.');
+      return;
+    }
+
+    // Clear existing statuses for the date in Activity Table
+    clearStatusCells(employeeName, dateIndex, firstRow);
+
+    // Remove status from leaveTrackerData for the specified date or today
+    const targetDateStr = dateStr || formatDate(new Date());
+    if (leaveTrackerData[targetDateStr] && leaveTrackerData[targetDateStr][employeeName]) {
+      delete leaveTrackerData[targetDateStr][employeeName];
+      if (Object.keys(leaveTrackerData[targetDateStr]).length === 0) {
+        delete leaveTrackerData[targetDateStr];
+      }
+    }
+
+    // Update both tables
+    updateLeaveTrackerTable();
+    saveData();
+    alert(`Status removed for ${employeeName} on ${targetDateStr}.`);
+  }
+
+  function removeStatusFromLeaveTracker(dateStr, empIndex) {
+    const emp = employees[empIndex];
+    if (!leaveTrackerData[dateStr] || !leaveTrackerData[dateStr][emp]) {
+      return; // no status to remove
+    }
+
+    const dateObj = dates.find(d => formatDate(d) === dateStr);
+    if (isWeekend(dateObj)) {
+      alert('Cannot remove status on weekends.');
+      return;
+    }
+
+    const password = prompt('Enter password to remove status:');
+    if (password !== PASSWORD) {
+      alert('Incorrect password.');
+      return;
+    }
+
+    const dateIndex = dates.findIndex(d => formatDate(d) === dateStr);
+    if (dateIndex === -1) {
+      return;
+    }
+
+    delete leaveTrackerData[dateStr][emp];
+    if (Object.keys(leaveTrackerData[dateStr]).length === 0) {
+      delete leaveTrackerData[dateStr];
+    }
+
+    const tbody = document.getElementById('activityBody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    let startRowIndex = -1;
+    for (let i = 0; i < rows.length; i += 8) {
+      const firstRow = rows[i];
+      const nameCell = firstRow.querySelector('.employee-name');
+      if (nameCell && nameCell.textContent.includes(emp)) {
+        startRowIndex = i;
+        break;
+      }
+    }
+    if (startRowIndex !== -1) {
+      const firstRow = rows[startRowIndex];
+      clearStatusCells(emp, dateIndex, firstRow);
+    }
+
+    updateLeaveTrackerTable();
+    saveData();
+    alert(`Status removed for ${emp} on ${dateStr}.`);
+  }
+
+  function bulkRemoveStatus(employee, fromDate, toDate) {
+    const password = prompt('Enter password to remove statuses:');
+    if (password !== PASSWORD) {
+      alert('Incorrect password.');
+      return;
+    }
+
+    if (toDate < fromDate) {
+      alert('Date To must be after Date From.');
+      return;
+    }
+
+    let currDate = new Date(fromDate);
+    let removedCount = 0;
+    while (currDate <= toDate) {
+      if (!isWeekend(currDate)) {
+        const dateStr = formatDate(currDate);
+        if (dates.some(d => formatDate(d) === dateStr)) {
+          if (leaveTrackerData[dateStr] && leaveTrackerData[dateStr][employee]) {
+            removeStatus(employee, dateStr);
+            removedCount++;
+          }
+        }
+      }
+      currDate.setDate(currDate.getDate() + 1);
+    }
+
+    updateLeaveTrackerTable();
+    saveData();
+    alert(`Removed ${removedCount} status${removedCount === 1 ? '' : 'es'} for ${employee} from ${formatDate(fromDate)} to ${formatDate(toDate)}.`);
+  }
+
+  function handleLeaveWFH(employeeName, status) {
+    markStatus(employeeName, status);
+  }
+
+  function buildLeaveTrackerHeader() {
+    const headerRow = document.getElementById('leaveTrackerHeader');
+    while (headerRow.children.length > 1) {
+      headerRow.removeChild(headerRow.lastChild);
+    }
+    employees.forEach(emp => {
+      const th = document.createElement('th');
+      th.textContent = emp;
+      headerRow.appendChild(th);
+    });
+  }
+
+  function buildLeaveTrackerBody() {
+    const tbody = document.getElementById('leaveTrackerBody');
+    tbody.innerHTML = '';
+
+    dates.forEach((date, dateIndex) => {
+      const tr = document.createElement('tr');
+      const tdDate = document.createElement('td');
+      tdDate.textContent = formatDate(date);
+      tr.appendChild(tdDate);
+
+      employees.forEach((emp, empIndex) => {
+        const td = document.createElement('td');
+        td.textContent = '';
+        td.addEventListener('click', () => removeStatusFromLeaveTracker(formatDate(date), empIndex));
+        tr.appendChild(td);
+      });
+
+      tbody.appendChild(tr);
+    });
+  }
+
+  function updateLeaveTrackerTable() {
+    const tbody = document.getElementById('leaveTrackerBody');
+    for (let i = 0; i < dates.length; i++) {
+      const dateStr = formatDate(dates[i]);
+      const tr = tbody.children[i];
+      employees.forEach((emp, colIndex) => {
+        const td = tr.children[colIndex + 1];
+        td.textContent = '';
+        td.style.backgroundColor = '';
+        if (leaveTrackerData[dateStr] && leaveTrackerData[dateStr][emp]) {
+          const status = leaveTrackerData[dateStr][emp];
+          td.textContent = status;
+          if (status === 'LEAVE') {
+            td.style.backgroundColor = '#ffcccc';
+          } else if (status === 'WFH') {
+            td.style.backgroundColor = '#ffffcc';
+          }
+        }
+      });
+    }
+    updateLeaveCountRow();
+  }
+
+  function updateLeaveCountRow() {
+    const tfootRow = document.getElementById('leaveCountRow');
+    while (tfootRow.children.length > 1) {
+      tfootRow.removeChild(tfootRow.lastChild);
+    }
+
+    employees.forEach(emp => {
+      let leaveCount = 0;
+      for (const dateStr in leaveTrackerData) {
+        if (leaveTrackerData[dateStr][emp] === 'LEAVE') {
+          leaveCount++;
+        }
+      }
+      const td = document.createElement('td');
+      td.textContent = leaveCount;
+      if (leaveCount > 24) {
+        td.style.backgroundColor = '#f44336';
+        td.style.color = 'white';
+        td.title = 'Leave exceeds 24 days!';
+      }
+      tfootRow.appendChild(td);
+    });
+  }
+
+  const employeeSelect = document.getElementById('employeeSelect');
+  const bulkRemoveEmployeeSelect = document.getElementById('bulkRemoveEmployeeSelect');
+
+  function populateEmployeeDropdown() {
+    employeeSelect.innerHTML = '';
+    bulkRemoveEmployeeSelect.innerHTML = '';
+    employees.forEach(emp => {
+      const option = document.createElement('option');
+      option.value = emp;
+      option.textContent = emp;
+      employeeSelect.appendChild(option);
+
+      const bulkOption = document.createElement('option');
+      bulkOption.value = emp;
+      bulkOption.textContent = emp;
+      bulkRemoveEmployeeSelect.appendChild(bulkOption);
+    });
+  }
+
+  const leavePlanningForm = document.getElementById('leavePlanningForm');
+  const bulkRemoveForm = document.getElementById('bulkRemoveForm');
+
+  leavePlanningForm.addEventListener('submit', e => {
+    e.preventDefault();
+    
+    const fromDate = new Date(document.getElementById('dateFrom').value);
+    const toDate = new Date(document.getElementById('dateTo').value);
+    const employee = employeeSelect.value;
+    const status = document.getElementById('statusSelect').value;
+    
+    if (toDate < fromDate) {
+      alert('Date To must be after Date From.');
+      return;
+    }
+    
+    let currDate = new Date(fromDate);
+    let markedCount = 0;
+    while (currDate <= toDate) {
+      if (!isWeekend(currDate)) {
+        const dateStr = formatDate(currDate);
+        if (dates.some(d => formatDate(d) === dateStr)) {
+          if (!leaveTrackerData[dateStr]) {
+            leaveTrackerData[dateStr] = {};
+          }
+          leaveTrackerData[dateStr][employee] = status;
+          markStatusAtDate(employee, status, currDate);
+          markedCount++;
+        }
+      }
+      currDate.setDate(currDate.getDate() + 1);
+    }
+    
+    updateLeaveTrackerTable();
+    saveData();
+    alert(`Marked ${status} for ${employee} on ${markedCount} day${markedCount === 1 ? '' : 's'} from ${formatDate(fromDate)} to ${formatDate(toDate)} (weekends excluded).`);
+    leavePlanningForm.reset();
+  });
+
+  bulkRemoveForm.addEventListener('submit', e => {
+    e.preventDefault();
+    
+    const fromDate = new Date(document.getElementById('bulkRemoveDateFrom').value);
+    const toDate = new Date(document.getElementById('bulkRemoveDateTo').value);
+    const employee = bulkRemoveEmployeeSelect.value;
+    
+    bulkRemoveStatus(employee, fromDate, toDate);
+    bulkRemoveForm.reset();
+  });
+
+  document.getElementById('addEmployeeBtn').addEventListener('click', () => {
+    const input = document.getElementById('newEmployeeName');
+    const name = input.value.trim();
+    if (!name) {
+      alert('Please enter a valid employee name.');
+      return;
+    }
+    if (employees.includes(name)) {
+      alert('Please enter a unique employee name.');
+      return;
+    }
+    employees.push(name);
+    buildActivityBody();
+    buildLeaveTrackerHeader();
+    buildLeaveTrackerBody();
+    updateLeaveTrackerTable();
+    populateEmployeeDropdown();
+    input.value = '';
+    saveData();
+  });
+
+  loadData();
+  buildHeaders();
+  buildActivityBody();
+  buildLeaveTrackerHeader();
+  buildLeaveTrackerBody();
+  updateLeaveTrackerTable();
+  populateEmployeeDropdown();
+</script>
+</body>
+</html>

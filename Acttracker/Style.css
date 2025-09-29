@@ -1,0 +1,107 @@
+/* styles.css */
+body {
+  font-family: Arial, sans-serif;
+  margin: 10px;
+  overflow-x: auto;
+  background: #fafafa;
+  color: #333;
+}
+
+h1 {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+table {
+  border-collapse: collapse;
+  border: 1px solid #aaa;
+  width: max-content;
+  min-width: 100%;
+  table-layout: fixed;
+}
+
+th, td {
+  border: 1px solid #aaa;
+  padding: 4px 6px;
+  text-align: center;
+  vertical-align: middle;
+  min-width: 80px;
+  max-width: 120px;
+  word-wrap: break-word;
+  user-select: text;
+}
+
+th.date-header {
+  background: #e0e0e0;
+  font-weight: 700;
+}
+
+tr.employee-name-row {
+  background: #ddd;
+  font-weight: bold;
+  text-align: left;
+}
+
+button.leave-btn {
+  background-color: #e74c3c;
+  color: white;
+  border: none;
+  padding: 5px 10px;
+  margin-right: 5px;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background-color 0.2s ease;
+}
+
+button.leave-btn:hover {
+  background-color: #c0392b;
+}
+
+button.wfh-btn {
+  background-color: #f1c40f;
+  color: black;
+  border: none;
+  padding: 5px 10px;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background-color 0.2s ease;
+}
+
+button.wfh-btn:hover {
+  background-color: #d4ac0d;
+}
+
+.status-leave {
+  background-color: #ffcccc !important;
+  color: #900;
+  font-weight: bold;
+}
+
+.status-wfh {
+  background-color: #ffffcc !important;
+  color: #999900;
+  font-weight: bold;
+}
+
+input.add-employee-input {
+  margin-right: 10px;
+  padding: 5px;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  width: 180px;
+}
+
+button.add-employee-btn {
+  padding: 5px 10px;
+  font-size: 14px;
+  cursor: pointer;
+  border-radius: 3px;
+  border: 1px solid #333;
+  background-color: white;
+  transition: background-color 0.2s ease;
+}
+
+button.add-employee-btn:hover {
+  background-color: #f0f0f0;
+}
